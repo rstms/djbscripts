@@ -1,0 +1,13 @@
+#!/bin/sh
+echo "Hit a key to download and install djbdns-1.05"
+echo "(executes 'rm -rf /usr/src/djbdns-1.05)..."
+read foo
+cd /usr/src
+rm -rf djbdns-1.05
+wget http://cr.yp.to/djbdns/djbdns-1.05.tar.gz
+tar zxfv djbdns-1.05.tar.gz
+rm djbdns-1.05.tar.gz
+cd djbdns-1.05
+sed -e 's/^extern int errno;/#include <errno.h>/' -i error.h
+make
+make setup check

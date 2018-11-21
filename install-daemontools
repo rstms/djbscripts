@@ -1,0 +1,14 @@
+#!/bin/sh
+echo "Hit a key to download and install daemontools (executes 'rm -rf /package')..."
+read foo
+cd /
+rm -rf /package
+mkdir -p /package
+chmod 1755 /package
+cd /package
+wget http://cr.yp.to/daemontools/daemontools-0.76.tar.gz
+tar zxpfv daemontools-0.76.tar.gz
+rm daemontools-0.76.tar.gz
+cd admin/daemontools-0.76
+sed -e 's/^extern int errno;/#include <errno.h>/' -i src/error.h
+package/install

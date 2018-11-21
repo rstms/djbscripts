@@ -1,0 +1,13 @@
+#!/bin/sh
+echo "Hit a key to download and install ucspi-tcp-0.88"
+echo "(executes 'rm -rf /usr/src/ucspi-tcp-0.88)..."
+read foo
+cd /usr/src
+rm -rf ucspi-tcp-0.88
+wget http://cr.yp.to/ucspi-tcp/ucspi-tcp-0.88.tar.gz
+tar zxfv ucspi-tcp-0.88.tar.gz
+rm ucspi-tcp-0.88.tar.gz
+cd ucspi-tcp-0.88
+sed -e 's/^extern int errno;/#include <errno.h>/' -i error.h
+make
+make setup check

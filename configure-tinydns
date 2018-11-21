@@ -1,0 +1,43 @@
+#!/bin/sh
+echo "Hit a key to configure a local-only tinydns server on your <localnet>.127 alias"
+read foo
+cd /tmp
+
+SYS=`uname -s`
+
+case $SYS in \
+  Linux)
+    useradd tinydns -d / -s /bin/false
+    useradd dnslog -d / -s /bin/false
+    IPADDR=`ifconfig eth0 | head -2 | tail -1 | cut -d: -f 2 | cut -d' ' -f 1`
+    ;;
+  OpenBSD)
+    useradd -d / -s /bin/false tinydns 
+    useradd -d / -s /bin/false dnslog
+    IPADDR=`ifconfig | grep 'inet ' | grep -v '127.0.0.1' | grep '.127' | head -1 | awk '{print $2}'`
+    ;;
+  *)
+    echo "Sorry, only Linux and OpenBSD are supported."
+    exit 0
+    ;;
+esac
+
+echo -n "Enter IP address [$IPADDR]:"
+read foo
+if [ $foo"a" == "a" ]; then foo=$IPADDR; fi
+IPADDR=$foo
+mkdir -p /etc/service
+rm -rf /etc/service/tinydns
+tinydns-conf tinydns dnslog /etc/service/tinydns $IPADDR
+
+mkdir /var/log/tinydns
+chown dnslog /var/log/tinydns
+rm -rf /etc/service/tinydns/log/main
+mv /etc/service/tinydns/log/run /etc/service/tinydns/log/run.tmp
+sed 's|./main|/var/log/tinydns|' </etc/service/tinydns/log/run.tmp >/etc/service/tinydns/log/run
+rm /etc/service/tinydns/log/run.tmp
+chmod +x /etc/service/tinydns/log/run
+ln -s /etc/service/tinydns /service
+sleep 5
+svstat /service/tinydns
+echo "Configure your server in /etc/service/tinydns/root"

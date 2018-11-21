@@ -1,0 +1,45 @@
+#!/bin/sh
+echo "Hit a key to configure an external djbdns cache"
+read foo
+cd /tmp
+
+SYS=`uname -s`
+
+case $SYS in \
+  Linux)
+    useradd dnscache -d / -s /bin/false
+    useradd dnslog -d / -s /bin/false
+    IPADDR=`ifconfig eth0 | head -2 | tail -1 | cut -d: -f 2 | cut -d' ' -f 1`
+    ;;
+  OpenBSD)
+    useradd -d / -s /bin/false dnscache
+    useradd -d / -s /bin/false dnslog
+    IPADDR=`ifconfig | grep 'inet ' | grep -v '127.0.0.1' | head -1 | awk '{print $2}'`
+    ;;
+  *)
+    echo "Sorry, only Linux and OpenBSD are supported."
+    exit 0
+    ;;
+esac
+
+echo -n "Enter IP address [$IPADDR]:"
+read foo
+if [ $foo"a" == "a" ]; then foo=$IPADDR; fi
+IPADDR=$foo
+mkdir -p /etc/service
+rm -rf /etc/service/dnscache
+dnscache-conf dnscache dnslog /etc/service/dnscache $IPADDR
+touch /etc/service/dnscache/root/ip/`echo $IPADDR | cut -d. -f 1-3`
+mkdir /var/log/dnscache
+chown dnslog /var/log/dnscache
+rm -rf /etc/service/dnscache/log/main
+mv /etc/service/dnscache/log/run /etc/service/dnscache/log/run.tmp
+sed 's|./main|/var/log/dnscache|' </etc/service/dnscache/log/run.tmp >/etc/service/dnscache/log/run
+rm /etc/service/dnscache/log/run.tmp
+chmod +x /etc/service/dnscache/log/run
+ln -s /etc/service/dnscache /service
+sleep 5
+svstat /service/dnscache
+SEARCH=`grep search /etc/resolv.conf`
+echo -e "nameserver $IPADDR\n$SEARCH\n" >/etc/resolv.conf
+echo "Make sure any dhcp clients won't clobber /etc/resolv.conf"

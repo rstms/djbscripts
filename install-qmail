@@ -1,0 +1,132 @@
+#!/bin/bash
+
+if [ `uname -s` != "Linux" ]; then
+  echo "Sorry, only Linux is supported."
+  exit 0
+fi
+
+echo "Hit a key to download and install qmail-1.03"
+echo "(executes 'rm -rf /usr/src/qmail-1.03)..."
+read foo
+
+if [ -e /var/qmail ]; then
+  echo "/var/qmail exists; installation aborted."
+  exit -1
+fi
+
+if [ ! -e /service ]; then
+  echo "Please install daemontools first."
+  exit -1
+fi
+
+POSTMASTER_FORWARD="mkrueger@backwoodsguru.com"
+/bin/echo -n "Enter Postmaster's forwarding address [$POSTMASTER_FORWARD]:"
+read foo
+if [ $foo"a" == "a" ]; then foo=$POSTMASTER_FORWARD; fi
+POSTMASTER_FORWARD=$foo
+
+SMTP_NETWORK=`/sbin/route -n | \
+  /bin/egrep eth0 | \
+  /usr/bin/head -1 | \
+  /usr/bin/cut -d' ' -f 1 | \
+  /usr/bin/cut -d. -f 1-3`.
+/bin/echo -n "Enter SMTP Relay Network [$SMTP_NETWORK]:"
+read foo
+if [ $foo"a" == "a" ]; then foo=$SMTP_NETWORK; fi
+SMTP_NETWORK=$foo
+
+FQDN=`/bin/hostname -f`
+/bin/echo -n "Enter Fully Qualified Domain Name [$FQDN]:"
+read foo
+if [ $foo"a" == "a" ]; then foo=$FQDN; fi
+FQDN=$foo
+
+echo "creating /var/qmail"
+/bin/mkdir /var/qmail
+
+if [ ! -e /tmp/qmail-1.03.tar.gz ]; then
+  cd /tmp
+  /usr/bin/wget http://cr.yp.to/software/qmail-1.03.tar.gz
+fi
+
+cd /usr/src
+/bin/rm -rf qmail-1.03
+/bin/tar zxfv /tmp/qmail-1.03.tar.gz
+#/usr/bin/rm /tmp/qmail-1.03.tar.gz
+
+/usr/sbin/groupadd nofiles
+/usr/sbin/useradd -g nofiles -d /var/qmail/alias alias
+/usr/sbin/useradd -g nofiles -d /var/qmail qmaild
+/usr/sbin/useradd -g nofiles -d /var/qmail qmaill
+/usr/sbin/useradd -g nofiles -d /var/qmail qmailp
+/usr/sbin/groupadd qmail
+/usr/sbin/useradd -g qmail -d /var/qmail qmailq
+/usr/sbin/useradd -g qmail -d /var/qmail qmailr
+/usr/sbin/useradd -g qmail -d /var/qmail qmails
+
+cd /usr/src/qmail-1.03
+/bin/echo -e "5c\n#include <errno.h>\n.\nw" | ed error.h
+/usr/bin/make setup check
+
+./config-fast $FQDN
+
+cd /var/qmail/alias
+echo "|forward $POSTMASTER_FORWARD" >.qmail-postmaster
+cp .qmail-postmaster .qmail-mailer-daemon
+cp .qmail-postmaster .qmail-root
+chmod 644 /var/qmail/alias/.qmail*
+
+mkdir /var/log/qmail-send
+chown qmaill /var/log/qmail-send
+chmod 2700 /var/log/qmail-send
+
+mkdir /var/qmail/service
+mkdir /var/qmail/service/qmail-send
+mkdir /var/qmail/service/qmail-send/log
+
+cat - >/var/qmail/service/qmail-send/run <<!
+#!/bin/sh
+exec env - PATH="/var/qmail/bin:\$PATH" qmail-start ./Mailbox
+!
+chmod +x /var/qmail/service/qmail-send/run
+
+cat - >/var/qmail/service/qmail-send/log/run <<!
+#!/bin/sh
+exec /usr/local/bin/setuidgid qmaill /usr/local/bin/multilog t s1000000 n20 /var/log/qmail-send
+!
+chmod +x /var/qmail/service/qmail-send/log/run
+
+mkdir /var/qmail/service/qmail-smtpd
+mkdir /var/qmail/service/qmail-smtpd/log
+
+
+cat - >/etc/tcp.smtp <<!
+127.0.0.1:allow,RELAYCLIENT=""
+$SMTP_NETWORK:allow,RELAYCLIENT=""
+:allow
+!
+
+/usr/local/bin/tcprules /etc/tcp.smtp.cdb /etc/tcp.smtp.tmp < /etc/tcp.smtp
+
+cat - >/var/qmail/service/qmail-smtpd/run <<!
+#!/bin/sh
+QMAILDUID=`id -u qmaild`
+NOFILESGID=`id -g qmaild`
+exec /usr/local/bin/softlimit -m 2000000 \
+ /usr/local/bin/tcpserver -H -R -v -p -x /etc/tcp.smtp.cdb \
+ -u $QMAILDUID -g $NOFILESGID 0 smtp /var/qmail/bin/qmail-smtpd 2>&1
+!
+chmod +x /var/qmail/service/qmail-smtpd/run
+
+cat - >/var/qmail/service/qmail-smtpd/log/run <<!
+#!/bin/sh
+exec /usr/local/bin/setuidgid qmaill /usr/local/bin/multilog t s1000000 n20 /var/log/qmail-smtpd
+!
+chmod +x /var/qmail/service/qmail-smtpd/log/run
+
+mkdir /var/log/qmail-smtpd
+chown qmaill /var/log/qmail-smtpd
+chmod 2700 /var/log/qmail-smtpd
+
+ln -s /var/qmail/service/qmail-send /service/qmail-send
+ln -s /var/qmail/service/qmail-smtpd /service/qmail-smtpd
